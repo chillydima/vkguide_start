@@ -96,6 +96,7 @@ public:
 	AllocatedImage _drawImage;
 	AllocatedImage _depthImage;
 	VkExtent2D _drawExtent;
+	float renderScale = 1.f;
 
 	DescriptorAllocator globalDescriptorAllocator;
 
@@ -121,6 +122,10 @@ public:
 
 	/*GPUMeshBuffers rectangle;*/
 	std::vector<std::shared_ptr<MeshAsset>> testMeshes;
+
+	bool resize_requested;
+
+	
 
 
 
@@ -158,6 +163,7 @@ private:
 	
 	void create_swapchain(uint32_t width, uint32_t height);
 	void destroy_swapchain();
+	void resize_swapchain();
 
 	void init_descriptors();
 

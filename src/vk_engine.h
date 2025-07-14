@@ -32,9 +32,12 @@ struct FrameData {
 
 	VkCommandPool _commandPool;
 	VkCommandBuffer _mainCommandBuffer;
+
 	VkSemaphore _swapchainSemaphore, _renderSemaphore;
 	VkFence _renderFence;
-	DeletionQueue _deletionQueue;
+
+	DeletionQueue _deletionQueue; 
+	DescriptorAllocatorGrowable _frameDescriptors;
 };
 
 struct ComputePushConstants {
@@ -114,16 +117,16 @@ public:
 	std::vector<ComputeEffect> backgroundEffects;
 	int currentBackgroundEffect{ 0 };
 
-	/*VkPipelineLayout _trianglePipelineLayout;
-	VkPipeline _trianglePipeline;*/
-
 	VkPipelineLayout _meshPipelineLayout;
 	VkPipeline _meshPipeline;
 
-	/*GPUMeshBuffers rectangle;*/
 	std::vector<std::shared_ptr<MeshAsset>> testMeshes;
 
 	bool resize_requested;
+
+	GPUSceneData sceneData;
+
+	VkDescriptorSetLayout _gpuSceneDataDescriptorLayout;
 
 	
 
@@ -169,7 +172,6 @@ private:
 
 	void init_pipelines();
 
-	//void init_triangle_pipeline();
 	void init_mesh_pipeline();
 
 	void init_background_pipelines();

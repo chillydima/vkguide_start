@@ -139,7 +139,9 @@ void VulkanEngine::draw()
     // wait until the gpu has finished rendering the last frame.
     // Timeout of 1 second
     VK_CHECK(vkWaitForFences(_device, 1, &get_current_frame()._renderFence, true, 1000000000));
+   
     get_current_frame()._deletionQueue.flush();
+    get_current_frame()._frameDescriptors.clear_pools(_device);
 
     VK_CHECK(vkResetFences(_device, 1, &get_current_frame()._renderFence));
 
@@ -564,31 +566,43 @@ void VulkanEngine::init_descriptors()
         builder.add_binding(0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
         _drawImageDescriptorLayout = builder.build(_device, VK_SHADER_STAGE_COMPUTE_BIT);
     }
+    {
+        DescriptorLayoutBuilder builder;
+        builder.add_binding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+        _drawImageDescriptorLayout = builder.build(_device, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
+    }
+
 
     // allocate a descriptor set for our draw image
     _drawImageDescriptors = globalDescriptorAllocator.allocate(_device, _drawImageDescriptorLayout);
 
-    VkDescriptorImageInfo imgInfo{};
-    imgInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-    imgInfo.imageView = _drawImage.imageView;
+    DescriptorWriter writer;
+    writer.write_image(0, _drawImage.imageView, VK_NULL_HANDLE, VK_IMAGE_LAYOUT_GENERAL, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
 
-    VkWriteDescriptorSet drawImageWrite = {};
-    drawImageWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    drawImageWrite.pNext = nullptr;
-
-    drawImageWrite.dstBinding = 0;
-    drawImageWrite.dstSet = _drawImageDescriptors;
-    drawImageWrite.descriptorCount = 1;
-    drawImageWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-    drawImageWrite.pImageInfo = &imgInfo;
-
-    vkUpdateDescriptorSets(_device, 1, &drawImageWrite, 0, nullptr);
+    writer.update_set(_device, _drawImageDescriptors);
 
     // make sure both the descriptor allocator and the new layout get cleaned up properly
     _mainDeletionQueue.push_function([&]() {
         globalDescriptorAllocator.destroy_pool(_device);
         vkDestroyDescriptorSetLayout(_device, _drawImageDescriptorLayout, nullptr);
     });
+
+    for (int i = 0; i < FRAME_OVERLAP; i++) {
+        //create a descriptor pool
+        std::vector<DescriptorAllocatorGrowable::PoolSizeRatio> frame_sizes = {
+            {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 3},
+            {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 3},
+            {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3},
+            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4}
+        };
+
+        _frames[i]._frameDescriptors = DescriptorAllocatorGrowable{};
+        _frames[i]._frameDescriptors.init(_device, 1000, frame_sizes);
+
+        _mainDeletionQueue.push_function([&, i]() {
+            _frames[i]._frameDescriptors.destroy_pools(_device);
+            });
+    }
 }
 
 void VulkanEngine::init_pipelines() 
@@ -597,7 +611,6 @@ void VulkanEngine::init_pipelines()
     init_background_pipelines();
 
     // graphics pipelines
-    //init_triangle_pipeline();
     init_mesh_pipeline();
 }
 
@@ -792,69 +805,6 @@ void VulkanEngine::draw_imgui(VkCommandBuffer cmd, VkImageView targetImageView)
     vkCmdEndRendering(cmd);
 }
 
-//void VulkanEngine::init_triangle_pipeline()
-//{
-//    VkShaderModule triangleFragShader;
-//    if (!vkutil::load_shader_module("../../shaders/colored_triangle.frag.spv", _device, &triangleFragShader))
-//    {
-//        fmt::print("Error when building the triangle fragment shader module\n");
-//    }
-//    else
-//    {
-//        fmt::print("Triangle fragment shader successfully loaded\n");
-//    }
-//
-//    VkShaderModule triangleVertexShader;
-//    if (!vkutil::load_shader_module("../../shaders/colored_triangle.vert.spv", _device, &triangleVertexShader))
-//    {
-//        fmt::print("Error when building the triangle vertex shader module\n");
-//    }
-//    else
-//    {
-//        fmt::print("Triangle vertex shader successfully loaded\n");
-//    }
-//
-//    // build the pipeline layout that controls the inputs/outputs of the shader
-//    // we are not using descriptor sets or other systems yet, so no need to use anything other than empty default
-//    VkPipelineLayoutCreateInfo pipeline_layout_info = vkinit::pipeline_layout_create_info();
-//    VK_CHECK(vkCreatePipelineLayout(_device, &pipeline_layout_info, nullptr, &_trianglePipelineLayout));
-//
-//    PipelineBuilder pipelineBuilder;
-//
-//    // use the triangle layout we created
-//    pipelineBuilder._pipelineLayout = _trianglePipelineLayout;
-//    // connecting the vertex and pixel shaders to the pipeline
-//    pipelineBuilder.set_shaders(triangleVertexShader, triangleFragShader);
-//    // it will draw triangles
-//    pipelineBuilder.set_input_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-//    // filled triangles
-//    pipelineBuilder.set_polygon_mode(VK_POLYGON_MODE_FILL);
-//    // no backface culling
-//    pipelineBuilder.set_cull_mode(VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
-//    // no multisampling
-//    pipelineBuilder.set_multisampling_none();
-//    // no blending
-//    pipelineBuilder.disable_blending();
-//    // no depth testing
-//    pipelineBuilder.disable_depthtest();
-//
-//    //connect the image format we will draw into, from draw image
-//    pipelineBuilder.set_color_attachment_format(_drawImage.imageFormat);
-//    pipelineBuilder.set_depth_format(_depthImage.imageFormat);
-//
-//    // finally build the pipeline
-//    _trianglePipeline = pipelineBuilder.build_pipeline(_device);
-//
-//    // clean structures
-//    vkDestroyShaderModule(_device, triangleFragShader, nullptr);
-//    vkDestroyShaderModule(_device, triangleVertexShader, nullptr);
-//
-//    _mainDeletionQueue.push_function([&]() {
-//        vkDestroyPipelineLayout(_device, _trianglePipelineLayout, nullptr);
-//        vkDestroyPipeline(_device, _trianglePipeline, nullptr);
-//        });
-//}
-
 void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
 {
     // begin a render pass connected to our draw image
@@ -863,13 +813,6 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
 
     VkRenderingInfo renderInfo = vkinit::rendering_info(_windowExtent, &colorAttachment, &depthAttachment);
     vkCmdBeginRendering(cmd, &renderInfo);
-
-    //vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _trianglePipeline);
-
-    //
-
-    //// launch a draw command to draw 3 vertices
-    //vkCmdDraw(cmd, 3, 1, 0, 0);
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _meshPipeline);
 
@@ -893,13 +836,6 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
     GPUDrawPushConstants push_constants;
-    /*push_constants.worldMatrix = glm::mat4{ 1.f };
-    push_constants.vertexBuffer = rectangle.vertexBufferAddress;
-
-    vkCmdPushConstants(cmd, _meshPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GPUDrawPushConstants), &push_constants);*/
-    /*vkCmdBindIndexBuffer(cmd, rectangle.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);*/
-
-    /*vkCmdDrawIndexed(cmd, 6, 1, 0, 0, 0);*/
 
     glm::mat4 view = glm::translate(glm::vec3{ 0,0,-5 });
     // camera projection
@@ -917,6 +853,25 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
     vkCmdBindIndexBuffer(cmd, testMeshes[2]->meshBuffers.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
 
     vkCmdDrawIndexed(cmd, testMeshes[2]->surfaces[0].count, 1, testMeshes[2]->surfaces[0].startIndex, 0, 0);
+
+    //allocate a new uniform buffer for the scene data
+    AllocatedBuffer gpuSceneDataBuffer = create_buffer(sizeof(GPUSceneData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+    //add it to the deletion queue of this frame so it gets deleted once its been used
+    get_current_frame()._deletionQueue.push_function([=, this]() {
+        destroy_buffer(gpuSceneDataBuffer);
+        });
+    
+    //write the buffer
+    GPUSceneData* sceneUniformData = (GPUSceneData*)gpuSceneDataBuffer.allocation->GetMappedData();
+    *sceneUniformData = sceneData;
+
+    //create a descriptor set that binds that buffer and update it
+    VkDescriptorSet globalDescriptor = get_current_frame()._frameDescriptors.allocate(_device, _gpuSceneDataDescriptorLayout);
+
+    DescriptorWriter writer;
+    writer.write_buffer(0, gpuSceneDataBuffer.buffer, sizeof(GPUSceneData), 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+    writer.update_set(_device, globalDescriptor);
 
     vkCmdEndRendering(cmd);
 
@@ -1074,36 +1029,6 @@ void VulkanEngine::init_mesh_pipeline()
 
 void VulkanEngine::init_default_data()
 {
-    //std::array<Vertex, 4> rect_vertices;
-
-    //rect_vertices[0].position = { 0.5, -0.5, 0 };
-    //rect_vertices[1].position = { 0.5, 0.5, 0 };
-    //rect_vertices[2].position = { -0.5, -0.5, 0 };
-    //rect_vertices[3].position = { -0.5, 0.5, 0 };
-
-    //rect_vertices[0].color = { 0,0,0,1 };
-    //rect_vertices[1].color = { 0.5,0.5,0.5,1 };
-    //rect_vertices[2].color = { 1,0,0,1 };
-    //rect_vertices[3].color = { 0,1,0,1 };
-
-    //std::array<uint32_t, 6> rect_indices;
-
-    //rect_indices[0] = 0;
-    //rect_indices[1] = 1;
-    //rect_indices[2] = 2;
-
-    //rect_indices[3] = 2;
-    //rect_indices[4] = 1;
-    //rect_indices[5] = 3;
-
-    //rectangle = uploadMesh(rect_indices, rect_vertices);
-
-    //// delete the rectangle data on engine shutdown
-    //_mainDeletionQueue.push_function([&]() {
-    //    destroy_buffer(rectangle.indexBuffer);
-    //    destroy_buffer(rectangle.vertexBuffer);
-    //    });
-
     testMeshes = loadGltfMeshes(this, "..\\..\\assets\\basicmesh.glb").value();
 }
 

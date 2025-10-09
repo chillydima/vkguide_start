@@ -6,6 +6,7 @@
 #include <vk_types.h>
 #include <vk_descriptors.h>
 #include <vk_loader.h>
+#include <camera.h>
 
 struct DeletionQueue
 {
@@ -235,6 +236,8 @@ public:
 
 	VkSampler _defaultSamplerLinear;
 	VkSampler _defaultSamplerNearest;
+
+	Camera mainCamera;
 
 private:
 	void init_vulkan();

@@ -239,6 +239,8 @@ public:
 
 	Camera mainCamera;
 
+	std::unordered_map<std::string, std::shared_ptr<LoadedGLTF>> loadedScenes;
+
 private:
 	void init_vulkan();
 	void init_swapchain();

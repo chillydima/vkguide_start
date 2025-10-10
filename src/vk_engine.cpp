@@ -7,6 +7,7 @@
 #include <vk_initializers.h>
 #include <vk_types.h>
 #include <vk_images.h>
+#include <vk_loader.h>
 
 #include "VkBootstrap.h"
 
@@ -67,10 +68,17 @@ void VulkanEngine::init()
     _isInitialized = true;
 
     mainCamera.velocity = glm::vec3(0.f);
-    mainCamera.position = glm::vec3(0, 0, 5);
+    mainCamera.position = glm::vec3(30.f, -00.f, -085.f);
 
     mainCamera.pitch = 0;
     mainCamera.yaw = 0;
+
+    std::string structurePath = { "..\\..\\assets\\structure.glb" };
+    auto structureFile = loadGltf(this, structurePath);
+
+    assert(structureFile.has_value());
+
+    loadedScenes["structure"] = *structureFile;
     
 }
 
@@ -79,6 +87,8 @@ void VulkanEngine::cleanup()
     if (_isInitialized) {
         // make sure the gpu has stopped doint its things
         vkDeviceWaitIdle(_device);
+
+        loadedScenes.clear();
 
         for (int i = 0; i < FRAME_OVERLAP; i++) {
             vkDestroyCommandPool(_device, _frames[i]._commandPool, nullptr);
@@ -1154,7 +1164,7 @@ void VulkanEngine::init_default_data()
         destroy_image(_errorCheckerboardImage);
         });
 
-        testMeshes = loadGltfMeshes(this, "..\\..\\assets\\basicmesh.glb").value();
+        //testMeshes = loadGltfMeshes(this, "..\\..\\assets\\basicmesh.glb").value();
 
         GLTFMetallic_Roughness::MaterialResources materialResources;
         //default the material textures
@@ -1416,8 +1426,8 @@ void VulkanEngine::update_scene()
 {
     mainDrawContext.OpaqueSurfaces.clear();
 
-    loadedNodes["Suzanne"]->Draw(glm::mat4{ 1.f }, mainDrawContext);
-
+    //loadedNodes["Suzanne"]->Draw(glm::mat4{ 1.f }, mainDrawContext);
+    
     mainCamera.update();
 
     glm::mat4 view = mainCamera.getViewMatrix();
@@ -1437,11 +1447,12 @@ void VulkanEngine::update_scene()
     sceneData.sunlightColor = glm::vec4(1.f);
     sceneData.sunlightDirection = glm::vec4(0, 1, 0.5, 1.f);
 
-    for (int x = -3; x < 3; x++) {
+    /*for (int x = -3; x < 3; x++) {
         glm::mat4 scale = glm::scale(glm::vec3{ 0.2 });
         glm::mat4 translation = glm::translate(glm::vec3{ x, 1, 0 });
 
         loadedNodes["Cube"]->Draw(translation * scale, mainDrawContext);
-    }
+    }*/
 
+    loadedScenes["structure"]->Draw(glm::mat4{ 1.f }, mainDrawContext);
 }
